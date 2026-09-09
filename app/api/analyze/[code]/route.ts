@@ -1,5 +1,5 @@
 import { getWclToken } from "@/app/lib/wcl";
-import { resolveSpellNames } from "@/app/lib/spellNames";
+import { resolveSpellNames, resolveSpellIcons } from "@/app/lib/spellNames";
 import { extractStatesAtCasts } from "@/app/lib/specs/extractArcaneMageState";
 import { evaluateArcaneMagePriority, ArcaneMageAction } from "@/app/lib/specs/arcaneMageSunfury";
 
@@ -83,6 +83,7 @@ export async function GET(
     .map((e) => e.abilityGameID)
     .filter((id): id is number => typeof id === "number");
   const spellNames = await resolveSpellNames(abilityIds);
+  const spellIcons = await resolveSpellIcons(abilityIds);
 
   const withNames = merged.map((e) => ({
     ...e,
@@ -93,6 +94,14 @@ export async function GET(
 
   const firstTouchIndex = castsWithState.findIndex((c) => c.ability === "Touch of the Magi");
   const openerEndsAtIndex = firstTouchIndex === -1 ? -1 : firstTouchIndex;
+
+  // Build a name -> icon lookup for the rotation spells specifically
+  const iconByName: Record<string, string | null> = {};
+  for (const e of withNames) {
+    if (e.abilityName && e.abilityGameID && !(e.abilityName in iconByName)) {
+      iconByName[e.abilityName] = spellIcons[e.abilityGameID] ?? null;
+    }
+  }
 
   const graded = castsWithState.map((c, i) => {
     const isOpener = openerEndsAtIndex !== -1 && i <= openerEndsAtIndex;
@@ -105,6 +114,7 @@ export async function GET(
     return {
       timestamp: c.timestamp,
       actualCast: c.ability,
+      icon: iconByName[c.ability] ?? null,
       recommendedCast: shouldGrade ? recommendedRealName : null,
       reason: isOpener
         ? "Opener sequence — not graded against steady-state priority"

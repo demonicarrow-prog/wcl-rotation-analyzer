@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 type Fight = { id: number; name: string; difficulty: number; kill: boolean };
 type Player = { id: number; name: string };
@@ -17,6 +17,7 @@ type ArcaneMageState = {
 type AnalysisResult = {
   timestamp: number;
   actualCast: string;
+  icon: string | null;
   recommendedCast: string | null;
   reason: string;
   correct: boolean | null;
@@ -32,6 +33,14 @@ type AnalysisResponse = {
 };
 
 type ListFilter = "all" | "mistakes";
+
+const ROTATION_ORDER = [
+  "Arcane Barrage",
+  "Arcane Missiles",
+  "Prismatic Bolt",
+  "Arcane Blast",
+  "Arcane Orb",
+];
 
 export default function Home() {
   const [reportInput, setReportInput] = useState("");
@@ -137,7 +146,6 @@ export default function Home() {
   const currentFight = fights.find((f) => f.id === selectedFight) ?? null;
   const selected = selectedIndex !== null ? analysis?.results[selectedIndex] : null;
 
-  // Timeline sizing: scale width by number of casts so dense fights scroll instead of squeezing
   const timelineWidth = analysis ? Math.max(1200, analysis.results.length * 8) : 1200;
 
   const visibleResults =
@@ -145,9 +153,34 @@ export default function Home() {
       .map((r, i) => ({ ...r, _i: i }))
       .filter((r) => (listFilter === "mistakes" ? r.graded && !r.correct : true)) ?? [];
 
+  // Group casts into per-ability lanes for the swim-lane timeline
+  const lanes = useMemo(() => {
+    if (!analysis) return [];
+    const byName = new Map<string, { icon: string | null; casts: (AnalysisResult & { _i: number })[] }>();
+
+    analysis.results.forEach((r, i) => {
+      if (!byName.has(r.actualCast)) {
+        byName.set(r.actualCast, { icon: r.icon, casts: [] });
+      }
+      byName.get(r.actualCast)!.casts.push({ ...r, _i: i });
+    });
+
+    const entries = Array.from(byName.entries());
+    entries.sort((a, b) => {
+      const ai = ROTATION_ORDER.indexOf(a[0]);
+      const bi = ROTATION_ORDER.indexOf(b[0]);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return b[1].casts.length - a[1].casts.length;
+    });
+
+    return entries;
+  }, [analysis]);
+
   return (
     <main className="min-h-screen bg-neutral-950 text-neutral-100">
-      <div className="max-w-5xl mx-auto px-6 py-10">
+      <div className="max-w-6xl mx-auto px-6 py-10">
         <header className="mb-10">
           <h1 className="text-2xl font-semibold tracking-tight">WCL Rotation Analyzer</h1>
           <p className="text-neutral-500 text-sm mt-1">
@@ -281,56 +314,73 @@ export default function Home() {
               </button>
             </div>
 
-            {/* TIMELINE */}
+            {/* SWIM-LANE TIMELINE */}
             <h2 className="text-xs uppercase tracking-wider text-neutral-500 font-medium mb-3">
               Timeline
             </h2>
             <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 mb-3 overflow-x-auto">
-              <div className="relative h-20" style={{ minWidth: timelineWidth }}>
-                <div className="absolute left-0 right-0 top-1/2 h-px bg-neutral-800" />
+              <div style={{ minWidth: timelineWidth }}>
+                {lanes.map(([name, lane]) => (
+                  <div key={name} className="flex items-center h-9 border-b border-neutral-800/60 last:border-b-0">
+                    <div className="w-40 flex-shrink-0 flex items-center gap-2 pr-3 sticky left-0 bg-neutral-900">
+                      {lane.icon && (
+                        <img
+                          src={lane.icon}
+                          alt={name}
+                          className="w-5 h-5 rounded-sm border border-neutral-700"
+                        />
+                      )}
+                      <span className="text-xs text-neutral-400 truncate">{name}</span>
+                    </div>
+                    <div className="relative flex-1 h-full">
+                      {lane.casts.map((c) => {
+                        const pct = ((c.timestamp - fightStartTs) / fightDuration) * 100;
+                        const isCorrect = c.graded && c.correct;
+                        const isWrong = c.graded && !c.correct;
+                        const isSelected = selectedIndex === c._i;
 
-                {analysis.results.map((r, i) => {
-                  const pct = ((r.timestamp - fightStartTs) / fightDuration) * 100;
-                  const isCorrect = r.graded && r.correct;
-                  const isWrong = r.graded && !r.correct;
-                  const isSelected = selectedIndex === i;
+                        let ring = "border-neutral-700";
+                        if (isCorrect) ring = "border-emerald-500";
+                        if (isWrong) ring = "border-red-500";
 
-                  // Mistakes are visually dominant; correct casts fade into the background
-                  let className = "absolute top-1/2 -translate-y-1/2 rounded-full transition-transform";
-                  if (isWrong) {
-                    className += " w-1.5 h-8 bg-red-400 hover:scale-125 z-10";
-                  } else if (isCorrect) {
-                    className += " w-0.5 h-3 bg-emerald-500/40 hover:h-5";
-                  } else {
-                    className += " w-0.5 h-2 bg-neutral-700";
-                  }
-                  if (isSelected) className += " ring-2 ring-white scale-125 z-20";
-
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => setSelectedIndex(i)}
-                      title={`${formatTime(r.timestamp, fightStartTs)} — ${r.actualCast}`}
-                      className={className}
-                      style={{ left: `${pct}%` }}
-                    />
-                  );
-                })}
+                        return (
+                          <button
+                            key={c._i}
+                            onClick={() => setSelectedIndex(c._i)}
+                            title={`${formatTime(c.timestamp, fightStartTs)} — ${c.actualCast}`}
+                            className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-sm border-2 ${ring} ${
+                              isSelected ? "ring-2 ring-white scale-150 z-10" : "hover:scale-125"
+                            } transition-transform`}
+                            style={{
+                              left: `${pct}%`,
+                              backgroundImage: c.icon ? `url(${c.icon})` : undefined,
+                              backgroundSize: "cover",
+                              backgroundColor: c.icon ? undefined : "#333",
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="flex justify-between text-neutral-600 text-xs mt-2">
+              <div className="flex justify-between text-neutral-600 text-xs mt-3">
                 <span>0:00</span>
                 <span>{formatTime(fightEndTs, fightStartTs)}</span>
               </div>
             </div>
             <p className="text-neutral-600 text-xs mb-8">
-              Scroll horizontally to explore. Red = mistake, faint green = correct, gray = not graded.
+              Green border = correct, red border = mistake, gray = not graded. Click an icon for details.
             </p>
 
             {/* SELECTED CAST DETAIL PANEL */}
             {selected && (
               <div className="bg-neutral-900 border border-sky-500/40 rounded-xl p-4 mb-8 text-sm">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="font-medium text-neutral-100">
+                  <div className="font-medium text-neutral-100 flex items-center gap-2">
+                    {selected.icon && (
+                      <img src={selected.icon} alt="" className="w-6 h-6 rounded-sm border border-neutral-700" />
+                    )}
                     {formatTime(selected.timestamp, fightStartTs)} — {selected.actualCast}
                   </div>
                   <button
@@ -396,7 +446,7 @@ export default function Home() {
                   <button
                     key={r._i}
                     onClick={() => setSelectedIndex(r._i)}
-                    className={`w-full text-left px-4 py-2.5 rounded-lg border-l-2 text-sm transition-colors ${
+                    className={`w-full text-left px-4 py-2.5 rounded-lg border-l-2 text-sm transition-colors flex items-start gap-2 ${
                       isSelected ? "ring-1 ring-sky-500" : ""
                     } ${
                       isCorrect
@@ -406,18 +456,23 @@ export default function Home() {
                         : "bg-neutral-900/50 border-neutral-800"
                     }`}
                   >
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-neutral-500 text-xs font-mono">
-                        {formatTime(r.timestamp, fightStartTs)}
-                      </span>
-                      <span className="font-medium text-neutral-200">{r.actualCast}</span>
-                      {isWrong && r.recommendedCast && (
-                        <span className="text-red-400 text-xs">
-                          expected {r.recommendedCast}
+                    {r.icon && (
+                      <img src={r.icon} alt="" className="w-5 h-5 rounded-sm border border-neutral-700 mt-0.5" />
+                    )}
+                    <div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-neutral-500 text-xs font-mono">
+                          {formatTime(r.timestamp, fightStartTs)}
                         </span>
-                      )}
+                        <span className="font-medium text-neutral-200">{r.actualCast}</span>
+                        {isWrong && r.recommendedCast && (
+                          <span className="text-red-400 text-xs">
+                            expected {r.recommendedCast}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-neutral-600 text-xs mt-0.5">{r.reason}</div>
                     </div>
-                    <div className="text-neutral-600 text-xs mt-0.5">{r.reason}</div>
                   </button>
                 );
               })}
