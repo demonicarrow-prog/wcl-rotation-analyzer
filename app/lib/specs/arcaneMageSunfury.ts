@@ -6,7 +6,7 @@ export type ArcaneMageState = {
     arcaneSalvo: number;
     inArcaneSoul: boolean;
     midCastArcaneBlastWithNewCC: boolean;
-    previousCast: string | null; // the real WCL name of the immediately preceding cast
+    previousCast: string | null;
   };
   
   export type ArcaneMageAction =
@@ -15,6 +15,8 @@ export type ArcaneMageState = {
     | "PrismaticBolt"
     | "ArcaneBlast"
     | "ArcaneOrb";
+  
+  const SALVO_CAP = 25;
   
   export function evaluateArcaneMagePriority(s: ArcaneMageState): {
     action: ArcaneMageAction;
@@ -35,19 +37,22 @@ export type ArcaneMageState = {
       return { action: "ArcaneBarrage", reason: "Arcane Soul window, dumping Salvo" };
     }
   
+    // Override: Salvo is capped - banking more CC into Missiles wastes stacks, dump now
+    if (s.arcaneSalvo >= SALVO_CAP) {
+      return { action: "ArcaneBarrage", reason: "Salvo at cap, must dump before building more" };
+    }
+  
     const hasCC = s.clearcastingStacks > 0;
   
-    // Override: 2+ CC stacks -> always chain 2x Missiles, ignore OPM
+    // 2+ CC stacks -> chain Missiles, but only if there's room left in Salvo to bank into
     if (s.clearcastingStacks >= 2) {
       return { action: "ArcaneMissiles", reason: "2+ Clearcasting stacks, chain Missiles" };
     }
   
-    // Have Overpowered Missile + CC -> Missile first
     if (s.hasOverpoweredMissile && hasCC) {
       return { action: "ArcaneMissiles", reason: "Overpowered Missile proc, spend it" };
     }
   
-    // Have Prismatic Bolt available
     if (s.hasPrismaticBolt) {
       if (hasCC) {
         return { action: "ArcaneMissiles", reason: "Spend CC before using held Prismatic Bolt" };
@@ -55,12 +60,10 @@ export type ArcaneMageState = {
       return { action: "PrismaticBolt", reason: "Prismatic Bolt available, no CC to spend first" };
     }
   
-    // No Prismatic Bolt, no OPM
     if (hasCC) {
       return { action: "ArcaneMissiles", reason: "Spend Clearcasting proc" };
     }
   
-    // 0 CC, no P.bolt, no OPM
     if (s.arcaneCharges < 2) {
       return { action: "ArcaneOrb", reason: "Low Arcane Charges, refill with Orb" };
     }

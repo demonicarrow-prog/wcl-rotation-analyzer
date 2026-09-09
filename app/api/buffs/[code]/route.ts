@@ -42,7 +42,6 @@ export async function GET(
   const json = await response.json();
   const events = json?.data?.reportData?.report?.events?.data ?? [];
 
-  // Only self-applied buffs, unique ability IDs
   const ownBuffs = events.filter((e: any) => e.sourceID === sourceID);
   const uniqueIds: number[] = [...new Set(ownBuffs.map((e: any) => e.abilityGameID))] as number[];
 

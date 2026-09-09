@@ -43,7 +43,6 @@ async function fetchEvents(
   return json?.data?.reportData?.report?.events?.data ?? [];
 }
 
-// Map our internal action identifiers to the real WCL ability name strings.
 const ACTION_TO_REAL_NAME: Record<ArcaneMageAction, string> = {
   ArcaneBarrage: "Arcane Barrage",
   ArcaneMissiles: "Arcane Missiles",
@@ -52,8 +51,6 @@ const ACTION_TO_REAL_NAME: Record<ArcaneMageAction, string> = {
   ArcaneOrb: "Arcane Orb",
 };
 
-// Only judge casts that are actually part of the core rotation priority tree.
-// Everything else (cooldowns, utility, trinkets, consumables) is tracked but not graded.
 const ROTATION_SPELLS = new Set(Object.values(ACTION_TO_REAL_NAME));
 
 export async function GET(
@@ -94,18 +91,28 @@ export async function GET(
 
   const castsWithState = extractStatesAtCasts(withNames);
 
-  const graded = castsWithState.map((c) => {
+  const firstTouchIndex = castsWithState.findIndex((c) => c.ability === "Touch of the Magi");
+  const openerEndsAtIndex = firstTouchIndex === -1 ? -1 : firstTouchIndex;
+
+  const graded = castsWithState.map((c, i) => {
+    const isOpener = openerEndsAtIndex !== -1 && i <= openerEndsAtIndex;
     const isRotationSpell = ROTATION_SPELLS.has(c.ability);
+    const shouldGrade = isRotationSpell && !isOpener;
+
     const recommendation = evaluateArcaneMagePriority(c.state);
     const recommendedRealName = ACTION_TO_REAL_NAME[recommendation.action];
 
     return {
       timestamp: c.timestamp,
       actualCast: c.ability,
-      recommendedCast: isRotationSpell ? recommendedRealName : null,
-      reason: isRotationSpell ? recommendation.reason : "Not a core rotation spell — not graded",
-      correct: isRotationSpell ? c.ability === recommendedRealName : null,
-      graded: isRotationSpell,
+      recommendedCast: shouldGrade ? recommendedRealName : null,
+      reason: isOpener
+        ? "Opener sequence — not graded against steady-state priority"
+        : isRotationSpell
+        ? recommendation.reason
+        : "Not a core rotation spell — not graded",
+      correct: shouldGrade ? c.ability === recommendedRealName : null,
+      graded: shouldGrade,
       state: c.state,
     };
   });
@@ -117,7 +124,7 @@ export async function GET(
     totalCasts: graded.length,
     gradedCasts: gradedOnly.length,
     correctCasts: correctCount,
-    accuracy: gradedOnly.length > 0 ? (correctCount / gradedOnly.length) : null,
+    accuracy: gradedOnly.length > 0 ? correctCount / gradedOnly.length : null,
     results: graded,
   });
 }
