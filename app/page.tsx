@@ -42,6 +42,8 @@ const ROTATION_ORDER = [
   "Arcane Orb",
 ];
 
+const LABEL_WIDTH = 160;
+
 export default function Home() {
   const [reportInput, setReportInput] = useState("");
   const [reportCode, setReportCode] = useState<string | null>(null);
@@ -146,14 +148,13 @@ export default function Home() {
   const currentFight = fights.find((f) => f.id === selectedFight) ?? null;
   const selected = selectedIndex !== null ? analysis?.results[selectedIndex] : null;
 
-  const timelineWidth = analysis ? Math.max(1200, analysis.results.length * 8) : 1200;
+  const trackWidth = analysis ? Math.max(1000, analysis.results.length * 8) : 1000;
 
   const visibleResults =
     analysis?.results
       .map((r, i) => ({ ...r, _i: i }))
       .filter((r) => (listFilter === "mistakes" ? r.graded && !r.correct : true)) ?? [];
 
-  // Group casts into per-ability lanes for the swim-lane timeline
   const lanes = useMemo(() => {
     if (!analysis) return [];
     const byName = new Map<string, { icon: string | null; casts: (AnalysisResult & { _i: number })[] }>();
@@ -318,55 +319,70 @@ export default function Home() {
             <h2 className="text-xs uppercase tracking-wider text-neutral-500 font-medium mb-3">
               Timeline
             </h2>
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 mb-3 overflow-x-auto">
-              <div style={{ minWidth: timelineWidth }}>
-                {lanes.map(([name, lane]) => (
-                  <div key={name} className="flex items-center h-9 border-b border-neutral-800/60 last:border-b-0">
-                    <div className="w-40 flex-shrink-0 flex items-center gap-2 pr-3 sticky left-0 bg-neutral-900">
+            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 mb-3">
+              <div className="flex">
+                {/* Label column - fixed, not scrollable, not overlapping anything */}
+                <div className="flex-shrink-0" style={{ width: LABEL_WIDTH }}>
+                  {lanes.map(([name, lane]) => (
+                    <div
+                      key={name}
+                      className="h-9 flex items-center gap-2 border-b border-neutral-800/60 last:border-b-0 pr-3"
+                    >
                       {lane.icon && (
                         <img
                           src={lane.icon}
                           alt={name}
-                          className="w-5 h-5 rounded-sm border border-neutral-700"
+                          className="w-5 h-5 rounded-sm border border-neutral-700 flex-shrink-0"
                         />
                       )}
                       <span className="text-xs text-neutral-400 truncate">{name}</span>
                     </div>
-                    <div className="relative flex-1 h-full">
-                      {lane.casts.map((c) => {
-                        const pct = ((c.timestamp - fightStartTs) / fightDuration) * 100;
-                        const isCorrect = c.graded && c.correct;
-                        const isWrong = c.graded && !c.correct;
-                        const isSelected = selectedIndex === c._i;
+                  ))}
+                </div>
 
-                        let ring = "border-neutral-700";
-                        if (isCorrect) ring = "border-emerald-500";
-                        if (isWrong) ring = "border-red-500";
+                {/* Icon track - scrolls horizontally, fully separate from the label column */}
+                <div className="flex-1 overflow-x-auto">
+                  <div style={{ minWidth: trackWidth }}>
+                    {lanes.map(([name, lane]) => (
+                      <div
+                        key={name}
+                        className="relative h-9 border-b border-neutral-800/60 last:border-b-0"
+                      >
+                        {lane.casts.map((c) => {
+                          const pct = ((c.timestamp - fightStartTs) / fightDuration) * 100;
+                          const isCorrect = c.graded && c.correct;
+                          const isWrong = c.graded && !c.correct;
+                          const isSelected = selectedIndex === c._i;
 
-                        return (
-                          <button
-                            key={c._i}
-                            onClick={() => setSelectedIndex(c._i)}
-                            title={`${formatTime(c.timestamp, fightStartTs)} — ${c.actualCast}`}
-                            className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-sm border-2 ${ring} ${
-                              isSelected ? "ring-2 ring-white scale-150 z-10" : "hover:scale-125"
-                            } transition-transform`}
-                            style={{
-                              left: `${pct}%`,
-                              backgroundImage: c.icon ? `url(${c.icon})` : undefined,
-                              backgroundSize: "cover",
-                              backgroundColor: c.icon ? undefined : "#333",
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
+                          let ring = "border-neutral-700";
+                          if (isCorrect) ring = "border-emerald-500";
+                          if (isWrong) ring = "border-red-500";
+
+                          return (
+                            <button
+                              key={c._i}
+                              onClick={() => setSelectedIndex(c._i)}
+                              title={`${formatTime(c.timestamp, fightStartTs)} — ${c.actualCast}`}
+                              className={`absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-sm border-2 ${ring} ${
+                                isSelected ? "ring-2 ring-white scale-150 z-10" : "hover:scale-125"
+                              } transition-transform`}
+                              style={{
+                                left: `${pct}%`,
+                                backgroundImage: c.icon ? `url(${c.icon})` : undefined,
+                                backgroundSize: "cover",
+                                backgroundColor: c.icon ? undefined : "#333",
+                              }}
+                            />
+                          );
+                        })}
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              <div className="flex justify-between text-neutral-600 text-xs mt-3">
-                <span>0:00</span>
-                <span>{formatTime(fightEndTs, fightStartTs)}</span>
+                  <div className="flex justify-between text-neutral-600 text-xs mt-3" style={{ minWidth: trackWidth }}>
+                    <span>0:00</span>
+                    <span>{formatTime(fightEndTs, fightStartTs)}</span>
+                  </div>
+                </div>
               </div>
             </div>
             <p className="text-neutral-600 text-xs mb-8">
