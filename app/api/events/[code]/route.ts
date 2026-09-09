@@ -1,29 +1,20 @@
 import { getWclToken } from "@/app/lib/wcl";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ code: string }> }
+async function fetchEvents(
+  token: string,
+  code: string,
+  fightID: number,
+  sourceID: number,
+  dataType: string
 ) {
-  const { code } = await params;
-  const { searchParams } = new URL(request.url);
-
-  const fightID = Number(searchParams.get("fightID"));
-  const sourceID = Number(searchParams.get("sourceID"));
-
-  const token = await getWclToken();
-
   const query = `
-    query ($code: String!, $fightIDs: [Int!], $sourceID: Int) {
+    query ($code: String!, $fightIDs: [Int!], $sourceID: Int, $dataType: EventDataType!) {
       reportData {
         report(code: $code) {
-          fights(fightIDs: $fightIDs) {
-            startTime
-            endTime
-          }
           events(
             fightIDs: $fightIDs
             sourceID: $sourceID
-            dataType: Casts
+            dataType: $dataType
             limit: 10000
           ) {
             data
@@ -42,11 +33,41 @@ export async function GET(
     },
     body: JSON.stringify({
       query,
-      variables: { code, fightIDs: [fightID], sourceID },
+      variables: { code, fightIDs: [fightID], sourceID, dataType },
     }),
   });
 
-  const data = await response.json();
+  const json = await response.json();
+  return json?.data?.reportData?.report?.events?.data ?? [];
+}
 
-  return Response.json(data);
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ code: string }> }
+) {
+  const { code } = await params;
+  const { searchParams } = new URL(request.url);
+
+  const fightID = Number(searchParams.get("fightID"));
+  const sourceID = Number(searchParams.get("sourceID"));
+
+  const token = await getWclToken();
+
+  const [casts, buffs, resources] = await Promise.all([
+    fetchEvents(token, code, fightID, sourceID, "Casts"),
+    fetchEvents(token, code, fightID, sourceID, "Buffs"),
+    fetchEvents(token, code, fightID, sourceID, "Resources"),
+  ]);
+
+  // Tag each event with its source stream, then merge + sort by timestamp
+  const merged = [
+    ...casts.map((e: any) => ({ ...e, _source: "cast" })),
+    ...buffs.map((e: any) => ({ ...e, _source: "buff" })),
+    ...resources.map((e: any) => ({ ...e, _source: "resource" })),
+  ].sort((a, b) => a.timestamp - b.timestamp);
+
+  return Response.json({
+    count: merged.length,
+    events: merged,
+  });
 }
