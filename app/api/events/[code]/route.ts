@@ -19,7 +19,6 @@ async function fetchEvents(
             limit: 10000
           ) {
             data
-            nextPageTimestamp
           }
         }
       }
@@ -42,6 +41,32 @@ async function fetchEvents(
   return json?.data?.reportData?.report?.events?.data ?? [];
 }
 
+async function fetchFightStart(token: string, code: string, fightID: number) {
+  const query = `
+    query ($code: String!, $fightIDs: [Int!]) {
+      reportData {
+        report(code: $code) {
+          fights(fightIDs: $fightIDs) {
+            startTime
+          }
+        }
+      }
+    }
+  `;
+
+  const response = await fetch("https://www.warcraftlogs.com/api/v2/client", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ query, variables: { code, fightIDs: [fightID] } }),
+  });
+
+  const json = await response.json();
+  return json?.data?.reportData?.report?.fights?.[0]?.startTime ?? 0;
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ code: string }> }
@@ -54,19 +79,23 @@ export async function GET(
 
   const token = await getWclToken();
 
-  const [casts, buffs, resources] = await Promise.all([
+  const [casts, buffs, resources, fightStart] = await Promise.all([
     fetchEvents(token, code, fightID, sourceID, "Casts"),
     fetchEvents(token, code, fightID, sourceID, "Buffs"),
     fetchEvents(token, code, fightID, sourceID, "Resources"),
+    fetchFightStart(token, code, fightID),
   ]);
+
+  // Only keep buffs the player applied to themself (own procs/buffs),
+  // dropping raid buffs/effects other players put on them
+  const ownBuffs = buffs.filter((e: any) => e.sourceID === sourceID);
 
   const merged = [
     ...casts.map((e: any) => ({ ...e, _source: "cast" })),
-    ...buffs.map((e: any) => ({ ...e, _source: "buff" })),
+    ...ownBuffs.map((e: any) => ({ ...e, _source: "buff" })),
     ...resources.map((e: any) => ({ ...e, _source: "resource" })),
   ].sort((a, b) => a.timestamp - b.timestamp);
 
-  // Resolve every unique ability ID to its real name
   const abilityIds = merged
     .map((e) => e.abilityGameID)
     .filter((id): id is number => typeof id === "number");
@@ -76,10 +105,12 @@ export async function GET(
   const withNames = merged.map((e) => ({
     ...e,
     abilityName: e.abilityGameID ? spellNames[e.abilityGameID] : undefined,
+    relativeTime: e.timestamp - fightStart,
   }));
 
   return Response.json({
     count: withNames.length,
+    fightStart,
     events: withNames,
   });
 }

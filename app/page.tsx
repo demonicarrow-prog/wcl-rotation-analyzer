@@ -122,12 +122,25 @@ export default function Home() {
       {events.length > 0 && (
         <div>
           <h2>Events ({events.length})</h2>
-          <div style={{ maxHeight: 500, overflowY: "auto", fontFamily: "monospace", fontSize: 12 }}>
-            {events.map((e, i) => (
-              <div key={i}>
-                [{e.timestamp}] {e.type} — {e.abilityName ?? e.abilityGameID}
-              </div>
-            ))}
+          <div style={{ maxHeight: 500, overflowY: "auto", fontFamily: "monospace", fontSize: 13 }}>
+            {events.map((e, i) => {
+              const totalSeconds = Math.floor(e.relativeTime / 1000);
+              const minutes = Math.floor(totalSeconds / 60);
+              const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+              const timeLabel = `${minutes}:${seconds}`;
+
+              const colors: Record<string, string> = {
+                cast: "#4fc3f7",
+                buff: "#ffb74d",
+                resource: "#81c784",
+              };
+
+              return (
+                <div key={i} style={{ color: colors[e._source] ?? "#fff", padding: "2px 0" }}>
+                  [{timeLabel}] {e.type} — {e.abilityName ?? e.abilityGameID}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
