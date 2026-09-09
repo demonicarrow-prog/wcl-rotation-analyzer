@@ -1,4 +1,5 @@
 import { getWclToken } from "@/app/lib/wcl";
+import { resolveSpellNames } from "@/app/lib/spellNames";
 
 async function fetchEvents(
   token: string,
@@ -59,15 +60,26 @@ export async function GET(
     fetchEvents(token, code, fightID, sourceID, "Resources"),
   ]);
 
-  // Tag each event with its source stream, then merge + sort by timestamp
   const merged = [
     ...casts.map((e: any) => ({ ...e, _source: "cast" })),
     ...buffs.map((e: any) => ({ ...e, _source: "buff" })),
     ...resources.map((e: any) => ({ ...e, _source: "resource" })),
   ].sort((a, b) => a.timestamp - b.timestamp);
 
+  // Resolve every unique ability ID to its real name
+  const abilityIds = merged
+    .map((e) => e.abilityGameID)
+    .filter((id): id is number => typeof id === "number");
+
+  const spellNames = await resolveSpellNames(abilityIds);
+
+  const withNames = merged.map((e) => ({
+    ...e,
+    abilityName: e.abilityGameID ? spellNames[e.abilityGameID] : undefined,
+  }));
+
   return Response.json({
-    count: merged.length,
-    events: merged,
+    count: withNames.length,
+    events: withNames,
   });
 }

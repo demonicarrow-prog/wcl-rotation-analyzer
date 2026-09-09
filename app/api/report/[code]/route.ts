@@ -5,15 +5,14 @@ export async function GET(
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
-
   const token = await getWclToken();
 
   const query = `
-    query ($code: String!, $fightIDs: [Int!]) {
+    query ($code: String!) {
       reportData {
         report(code: $code) {
           title
-          fights(fightIDs: $fightIDs) {
+          fights {
             id
             name
             difficulty
@@ -21,7 +20,6 @@ export async function GET(
             startTime
             endTime
           }
-          playerDetails(fightIDs: $fightIDs)
         }
       }
     }
@@ -33,10 +31,9 @@ export async function GET(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ query, variables: { code, fightIDs: [105] } }),
+    body: JSON.stringify({ query, variables: { code } }),
   });
 
   const data = await response.json();
-
-  return Response.json(data);
+  return Response.json(data?.data?.reportData?.report ?? { error: "Report not found" });
 }
